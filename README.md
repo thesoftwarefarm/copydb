@@ -14,7 +14,7 @@ Download the dbd script for your distribution.
 
 Move it to a usable path (like /usr/local/bin/dbd).
 
-Clone this repository and make the script executable (`chmod +x copydb`).
+Clone this repository and make the script executable (`chmod +x copydb.sh`).
 
 If using docker, make sure docker is installed. One container will be created for you, using the version you chosen within the configuration file.
 
