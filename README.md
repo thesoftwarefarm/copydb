@@ -22,3 +22,12 @@ If using docker, make sure docker is installed. One container will be created fo
 ```
 ./copydb sample.cfg
 ```
+
+## Dependencies
+
+The scripts makes use of `pv` to display a progress bar for the import process.
+
+On macOS, install it with:
+```
+brew install pv
+```

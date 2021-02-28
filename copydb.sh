@@ -51,7 +51,7 @@ else
         sleep 1
     done
 
-    printf "\n${grn}Docker is now running${end}\n\n"
+    printf "\n${grn}Docker is now running${end}\n"
 
     printf "\n%s\n" "${grn}Creating new database${end}"
     docker exec -it ${INSTANCE_NAME} mysql -uroot -pmy-secret-pw -e "CREATE DATABASE ${DESTINATION_DB_NAME};"
@@ -61,12 +61,17 @@ else
 
     printf "\n%s\n" "${grn}Importing database${end}"
 
-    gunzip < "${INSTANCE_NAME}.sql.gz" | docker exec -i ${INSTANCE_NAME} mysql -uroot -pmy-secret-pw ${DESTINATION_DB_NAME}
+    pv "${INSTANCE_NAME}.sql.gz" | gunzip | docker exec -i ${INSTANCE_NAME} mysql -uroot -pmy-secret-pw ${DESTINATION_DB_NAME}
 
     rm "${INSTANCE_NAME}.sql.gz"
 
-    printf "\n${grn}New docker instance name is \"${end}$INSTANCE_NAME${grn}\".${end}\n\n"
+    printf "\n${grn}New docker instance name is \"${end}$INSTANCE_NAME${grn}\".${end}\n"
+    
+    printf "\n${grn}Ports you can use: ${end}\n"
+    docker port ${INSTANCE_NAME}
+
+    printf "\n${grn}Database credentials: root / my-secret-pw ${end}\n"
 
 fi
 
-printf "\n${grn}Done. The copied database name is \"${end}$DESTINATION_DB_NAME${grn}\".${end}\n\n"
+printf "\n${grn}The copied database name is \"${end}$DESTINATION_DB_NAME${grn}\".${end}\n\n"
