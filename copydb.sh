@@ -37,13 +37,21 @@ DESTINATION_DB_NAME=${DBD_DATABASE_ID}"_"${TIMESTAMP}
 grn=$'\e[1;32m'
 end=$'\e[0m'
 
+# excluded tables might be missing, in which case dbd will complain
+if [ -z "$EXCLUDED_TABLES" ]
+then
+      EXCLUDE_TABLES_PART=""
+else
+      EXCLUDE_TABLES_PART="--exclude-table-data ${EXCLUDED_TABLES}"
+fi
+
 if [ $DESTINATION_TARGET == "local" ]; then
   
     printf "\n%s\n" "${grn}Creating new database${end}"
     mysql -u ${DESTINATION_DB_USER} -p${DESTINATION_DB_PASS} -e "CREATE DATABASE ${DESTINATION_DB_NAME}"
 
     printf "\n%s\n" "${grn}Downloading and importing database${end}"
-    ${DBD_PATH} ${DBD_DATABASE_ID} --api-key ${DBD_API_KEY} --url ${DBD_URL} --exclude-table-data ${EXCLUDED_TABLES}  | gunzip | mysql -u ${DESTINATION_DB_USER} -p${DESTINATION_DB_PASS} ${DESTINATION_DB_NAME}
+    ${DBD_PATH} ${DBD_DATABASE_ID} --api-key ${DBD_API_KEY} --url ${DBD_URL} ${EXCLUDE_TABLES_PART} | gunzip | mysql -u ${DESTINATION_DB_USER} -p${DESTINATION_DB_PASS} ${DESTINATION_DB_NAME}
 
     printf "\n${grn}The copied database name is \"${end}$DESTINATION_DB_NAME${grn}\".${end}\n\n"
 
@@ -51,9 +59,13 @@ elif [ $DESTINATION_TARGET == "docker" ]; then
 
     printf "\n%s\n" "${grn}Spinning up a new docker container${end}"
 
-    INSTANCE_NAME="copydb_"${TIMESTAMP}
-
-    MYSQL_CONTAINER=`docker run -td --name ${INSTANCE_NAME} --health-cmd='mysqladmin ping --silent' -p 3306 -e MYSQL_ROOT_PASSWORD=${DOCKER_ROOT_PASSWORD} -d ${DOCKER_TAG} --max-allowed-packet=67108864 --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci`
+    if [ "$DOCKER_NEW_INSTANCE" = true ]
+    then
+        INSTANCE_NAME="copydb_"${TIMESTAMP}
+        docker run -td --name ${INSTANCE_NAME} --health-cmd='mysqladmin ping --silent' -p 3306 -e MYSQL_ROOT_PASSWORD=${DOCKER_ROOT_PASSWORD} -d ${DOCKER_TAG} --max-allowed-packet=67108864 --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    else
+        INSTANCE_NAME="$DOCKER_EXISTING_INSTANCE_NAME"
+    fi
 
     while ! docker exec ${INSTANCE_NAME} mysqladmin --user=root --password=${DOCKER_ROOT_PASSWORD} --host "127.0.0.1" ping --silent &> /dev/null ; do
         echo "Waiting for a database connection..."
@@ -66,33 +78,30 @@ elif [ $DESTINATION_TARGET == "docker" ]; then
     docker exec -it ${INSTANCE_NAME} mysql -uroot -p${DOCKER_ROOT_PASSWORD} -e "CREATE DATABASE ${DESTINATION_DB_NAME};"
 
     printf "\n%s\n" "${grn}Downloading the database${end}"
-    ${DBD_PATH} ${DBD_DATABASE_ID} --api-key ${DBD_API_KEY} --url ${DBD_URL} --exclude-table-data ${EXCLUDED_TABLES} > "${INSTANCE_NAME}.sql.gz"
+    ${DBD_PATH} ${DBD_DATABASE_ID} --api-key ${DBD_API_KEY} --url ${DBD_URL} ${EXCLUDE_TABLES_PART} > "${DESTINATION_DB_NAME}.sql.gz"
 
     printf "\n%s\n" "${grn}Importing the database${end}"
 
     # use pv for visual progress
-    pv "${INSTANCE_NAME}.sql.gz" | gunzip | docker exec -i ${INSTANCE_NAME} mysql -uroot -p${DOCKER_ROOT_PASSWORD} ${DESTINATION_DB_NAME}
+    pv "${DESTINATION_DB_NAME}.sql.gz" | gunzip | docker exec -i ${INSTANCE_NAME} mysql -uroot -p${DOCKER_ROOT_PASSWORD} ${DESTINATION_DB_NAME}
 
     # remove the backup
-    rm "${INSTANCE_NAME}.sql.gz"
+    rm "${DESTINATION_DB_NAME}.sql.gz"
 
     printf "\n${grn}Docker instance name is \"${end}$INSTANCE_NAME${grn}\".${end}\n"
     
     printf "\n${grn}Ports you can use: ${end}\n"
     docker port ${INSTANCE_NAME}
 
-    printf "\n${grn}Database credentials: root / ${DOCKER_ROOT_PASSWORD} ${end}\n"
+    printf "\n${grn}Database credentials: root / \"${end}$DOCKER_ROOT_PASSWORD${grn}\".${end}\n"
 
     printf "\n${grn}The copied database name is \"${end}$DESTINATION_DB_NAME${grn}\".${end}\n\n"
 
 elif [ $DESTINATION_TARGET == "backup" ]; then
 
-    # add forward slash at the end if not found
-    #[[ "${BACKUP_PATH}" != */ ]] && BACKUP_PATH="${BACKUP_PATH}/"
-
-    FILE_PATH="${BACKUP_PATH}${DESTINATION_DB_NAME}.sql.gz"
+    FILE_PATH="${BACKUP_PATH}/${DESTINATION_DB_NAME}.sql.gz"
 
     # run dbd and save the file within the configured location
-    ${DBD_PATH} ${DBD_DATABASE_ID} --api-key ${DBD_API_KEY} --url ${DBD_URL} --exclude-table-data ${EXCLUDED_TABLES} > ${FILE_PATH}
+    ${DBD_PATH} ${DBD_DATABASE_ID} --api-key ${DBD_API_KEY} --url ${DBD_URL} ${EXCLUDE_TABLES_PART} > ${FILE_PATH}
 
 fi
