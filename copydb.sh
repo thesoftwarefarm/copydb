@@ -53,7 +53,7 @@ elif [ $DESTINATION_TARGET == "docker" ]; then
 
     INSTANCE_NAME="copydb_"${TIMESTAMP}
 
-    MYSQL_CONTAINER=`docker run -td --name ${INSTANCE_NAME} --health-cmd='mysqladmin ping --silent' -p 3306 -e MYSQL_ROOT_PASSWORD=${DOCKER_ROOT_PASSWORD} -d ${DOCKER_TAG}`
+    MYSQL_CONTAINER=`docker run -td --name ${INSTANCE_NAME} --health-cmd='mysqladmin ping --silent' -p 3306 -e MYSQL_ROOT_PASSWORD=${DOCKER_ROOT_PASSWORD} -d ${DOCKER_TAG} --max-allowed-packet=67108864 --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci`
 
     while ! docker exec ${INSTANCE_NAME} mysqladmin --user=root --password=${DOCKER_ROOT_PASSWORD} --host "127.0.0.1" ping --silent &> /dev/null ; do
         echo "Waiting for a database connection..."
@@ -88,7 +88,7 @@ elif [ $DESTINATION_TARGET == "docker" ]; then
 elif [ $DESTINATION_TARGET == "backup" ]; then
 
     # add forward slash at the end if not found
-    [[ "${BACKUP_PATH}" != */ ]] && BACKUP_PATH="${BACKUP_PATH}/"
+    #[[ "${BACKUP_PATH}" != */ ]] && BACKUP_PATH="${BACKUP_PATH}/"
 
     FILE_PATH="${BACKUP_PATH}${DESTINATION_DB_NAME}.sql.gz"
 
