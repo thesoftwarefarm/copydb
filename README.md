@@ -1,33 +1,43 @@
 # Copying databases
 
-This script will copy a MySql database from the a server and restore it on the local server or within a docker container. 
+This script will copy a MySql database from the a remote server. 
 
 Connection information is taken from the configuration file provided as a parameter.
 
 The configuration file also specifies the excluded tables in a comma-separated list of table names (`EXCLUDED_TABLES`); these tables' content will not be copied over (only their structure will).
 
-This script makes use of the database dumper script https://github.com/serbanrobu/dbd
+There are a couple of options of what to do with the database dump once it's fetched:
 
-## Installation
-
-Download the dbd script for your distribution.
-
-Move it to a usable path (like /usr/local/bin/dbd).
-
-Clone this repository and make the script executable (`chmod +x copydb.sh`).
-
-If using docker, make sure docker is installed. One container will be created for you, using the version you chosen within the configuration file.
-
-## Usage
-```
-./copydb sample.cfg
-```
+- restore is on the local server
+- restore it within a docker instance
+- simply create a gzip-ed backup and store it within a custom path
 
 ## Dependencies
 
-The scripts makes use of `pv` to display a progress bar for the import process.
+You should have the following:
 
-On macOS, install it with:
+- database dumper script script: https://github.com/serbanrobu/dbd - go to the releases page, download the appropriate version for your OS, run `chmod +x dbd`, and move it to `/usr/local/bin/dbd` for convencience
+
+- `pv` to display a progress bar for the import process. On macOS, install it with: `brew install pv`
+
+- `docker` installed and running (if going with a docker instance)
+
+## Installation
+
+Clone this repository and make the script executable (`chmod +x copydb.sh`).
+
+## Usage
 ```
-brew install pv
+./copydb.sh sample.cfg
 ```
+
+## Multi-tenant systems
+
+Using this script you can orchestrate the download of multiple databases (maybe belonging to a multi-tenant system). Create a bash script and run a sequence like below:
+
+```
+./copydb.sh landlord.cfg
+./copydb.sh tenant1.cfg
+./copydb.sh tenant2.cfg
+```
+
