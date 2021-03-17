@@ -11,6 +11,7 @@ There are a couple of options of what to do with the database dump once it's fet
 - restore is on the local server
 - restore it within a docker instance
 - simply create a gzip-ed backup and store it within a custom path
+- restore it on a remote server you have access to (be that vagrant or another server). It is assumed you have access via SSH keys and no password is required
 
 ## Dependencies
 
