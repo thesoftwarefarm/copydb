@@ -18,16 +18,28 @@ else
     exit
 fi
 
-if [ ! -f ${DBD_PATH} ]; then
-    echo "dbd script not found at the specified path."
+if ! command -v dbd &> /dev/null
+then
+    echo "dbd could not be found, please install it first (https://github.com/serbanrobu/dbd)"
     exit
 fi
 
-VALID_TARGETS=('local' 'docker' 'backup')
+VALID_TARGETS=('local' 'docker' 'backup' 'remote')
 
 if ! grep -q $DESTINATION_TARGET <<< "${VALID_TARGETS[@]}"
 then
     echo 'You have selected an invalid destination target'
+fi
+
+# we need pv to be found within PATH, otherwise we'll do a lot of steps only to error out
+# pv is required only for local and docker
+if [ $DESTINATION_TARGET == "local" ] | [ $DESTINATION_TARGET == "docker" ]
+then
+    if ! command -v pv &> /dev/null
+    then
+        echo "pv could not be found, please install it first (on MacOS: brew install pv)"
+        exit
+    fi
 fi
 
 # define a couple of variables
@@ -50,8 +62,14 @@ if [ $DESTINATION_TARGET == "local" ]; then
     printf "\n%s\n" "${grn}Creating new database${end}"
     mysql -u ${DESTINATION_DB_USER} -p${DESTINATION_DB_PASS} -e "CREATE DATABASE ${DESTINATION_DB_NAME}"
 
-    printf "\n%s\n" "${grn}Downloading and importing database${end}"
-    ${DBD_PATH} ${DBD_DATABASE_ID} --api-key ${DBD_API_KEY} --url ${DBD_URL} ${EXCLUDE_TABLES_PART} | gunzip | mysql -u ${DESTINATION_DB_USER} -p${DESTINATION_DB_PASS} ${DESTINATION_DB_NAME}
+    printf "\n%s\n" "${grn}Downloading the database${end}"
+    dbd ${DBD_CONNECTION_ID} --dbname ${DBD_DATABASE_ID} --api-key ${DBD_API_KEY} --url ${DBD_URL} ${EXCLUDE_TABLES_PART} > /tmp/"${DESTINATION_DB_NAME}.sql.gz" 
+    
+    printf "\n%s\n" "${grn}Importing the database${end}"
+    pv /tmp/"${DESTINATION_DB_NAME}.sql.gz" | gunzip | mysql -u ${DESTINATION_DB_USER} -p${DESTINATION_DB_PASS} ${DESTINATION_DB_NAME}
+
+    printf "\n%s\n" "${grn}Cleaning up${end}"
+    rm /tmp/"${DESTINATION_DB_NAME}.sql.gz"
 
     printf "\n${grn}The copied database name is \"${end}$DESTINATION_DB_NAME${grn}\".${end}\n\n"
 
@@ -62,12 +80,12 @@ elif [ $DESTINATION_TARGET == "docker" ]; then
     if [ "$DOCKER_NEW_INSTANCE" = true ]
     then
         INSTANCE_NAME="copydb_"${TIMESTAMP}
-        docker run -td --name ${INSTANCE_NAME} --health-cmd='mysqladmin ping --silent' -p 3306 -e MYSQL_ROOT_PASSWORD=${DOCKER_ROOT_PASSWORD} -d ${DOCKER_TAG} --max-allowed-packet=67108864 --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+        docker run -td --name ${INSTANCE_NAME} --health-cmd='mysqladmin ping --silent' -p 3306 -e MYSQL_ROOT_PASSWORD=${DESTINATION_DB_PASS} -d ${DOCKER_TAG} --max-allowed-packet=67108864 --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     else
         INSTANCE_NAME="$DOCKER_EXISTING_INSTANCE_NAME"
     fi
 
-    while ! docker exec ${INSTANCE_NAME} mysqladmin --user=root --password=${DOCKER_ROOT_PASSWORD} --host "127.0.0.1" ping --silent &> /dev/null ; do
+    while ! docker exec ${INSTANCE_NAME} mysqladmin --user=root --password=${DESTINATION_DB_PASS} --host "127.0.0.1" ping --silent &> /dev/null ; do
         echo "Waiting for a database connection..."
         sleep 1
     done
@@ -75,25 +93,24 @@ elif [ $DESTINATION_TARGET == "docker" ]; then
     printf "\n${grn}Docker is now running${end}\n"
 
     printf "\n%s\n" "${grn}Creating a new database${end}"
-    docker exec -it ${INSTANCE_NAME} mysql -uroot -p${DOCKER_ROOT_PASSWORD} -e "CREATE DATABASE ${DESTINATION_DB_NAME};"
+    docker exec -it ${INSTANCE_NAME} mysql -uroot -p${DESTINATION_DB_PASS} -e "CREATE DATABASE ${DESTINATION_DB_NAME};"
 
-    printf "\n%s\n" "${grn}Downloading the database${end}"
-    ${DBD_PATH} ${DBD_DATABASE_ID} --api-key ${DBD_API_KEY} --url ${DBD_URL} ${EXCLUDE_TABLES_PART} > "${DESTINATION_DB_NAME}.sql.gz"
+    printf "\n%s\n" "${grn}Downloading the database within /tmp/ ${end}"
+    dbd ${DBD_CONNECTION_ID} --dbname ${DBD_DATABASE_ID} --api-key ${DBD_API_KEY} --url ${DBD_URL} ${EXCLUDE_TABLES_PART} > /tmp/"${DESTINATION_DB_NAME}.sql.gz"
 
     printf "\n%s\n" "${grn}Importing the database${end}"
 
-    # use pv for visual progress
-    pv "${DESTINATION_DB_NAME}.sql.gz" | gunzip | docker exec -i ${INSTANCE_NAME} mysql -uroot -p${DOCKER_ROOT_PASSWORD} ${DESTINATION_DB_NAME}
+    pv /tmp/"${DESTINATION_DB_NAME}.sql.gz" | gunzip | docker exec -i ${INSTANCE_NAME} mysql -uroot -p${DESTINATION_DB_PASS} ${DESTINATION_DB_NAME}
 
-    # remove the backup
-    rm "${DESTINATION_DB_NAME}.sql.gz"
+    printf "\n%s\n" "${grn}Cleaning up${end}"
+    rm /tmp/"${DESTINATION_DB_NAME}.sql.gz"
 
     printf "\n${grn}Docker instance name is \"${end}$INSTANCE_NAME${grn}\".${end}\n"
     
     printf "\n${grn}Ports you can use: ${end}\n"
     docker port ${INSTANCE_NAME}
 
-    printf "\n${grn}Database credentials: root / \"${end}$DOCKER_ROOT_PASSWORD${grn}\".${end}\n"
+    printf "\n${grn}Database credentials: root / \"${end}$DESTINATION_DB_PASS${grn}\".${end}\n"
 
     printf "\n${grn}The copied database name is \"${end}$DESTINATION_DB_NAME${grn}\".${end}\n\n"
 
@@ -101,7 +118,39 @@ elif [ $DESTINATION_TARGET == "backup" ]; then
 
     FILE_PATH="${BACKUP_PATH}/${DESTINATION_DB_NAME}.sql.gz"
 
-    # run dbd and save the file within the configured location
-    ${DBD_PATH} ${DBD_DATABASE_ID} --api-key ${DBD_API_KEY} --url ${DBD_URL} ${EXCLUDE_TABLES_PART} > ${FILE_PATH}
+    dbd ${DBD_CONNECTION_ID} --dbname ${DBD_DATABASE_ID} --api-key ${DBD_API_KEY} --url ${DBD_URL} ${EXCLUDE_TABLES_PART} > ${FILE_PATH}
+
+elif [ $DESTINATION_TARGET == "remote" ]; then
+
+    status=$(ssh -o BatchMode=yes -o ConnectTimeout=5 ${REMOTE_USER}@${REMOTE_IP} echo ok 2>&1)
+
+    if [[ $status == ok ]] ; then
+        
+        printf "\n%s\n" "${grn}Downloading the database locally${end}"
+        dbd ${DBD_CONNECTION_ID} --dbname ${DBD_DATABASE_ID} --api-key ${DBD_API_KEY} --url ${DBD_URL} ${EXCLUDE_TABLES_PART} > /tmp/"${DESTINATION_DB_NAME}.sql.gz"
+
+        printf "\n%s\n" "${grn}Transferring to remote host${end}"
+        scp /tmp/"${DESTINATION_DB_NAME}.sql.gz" ${REMOTE_USER}@${REMOTE_IP}:/tmp/"${DESTINATION_DB_NAME}.sql.gz"
+
+        printf "\n%s\n" "${grn}Running commands on remote host${end}"
+        ssh ${REMOTE_USER}@${REMOTE_IP} << EOF
+ echo "Creating database"       
+ mysql -u ${DESTINATION_DB_USER} -p${DESTINATION_DB_PASS} -e "CREATE DATABASE ${DESTINATION_DB_NAME}"
+
+ echo "Importing database"
+ pv /tmp/"${DESTINATION_DB_NAME}.sql.gz" | gunzip | mysql -u ${DESTINATION_DB_USER} -p${DESTINATION_DB_PASS} ${DESTINATION_DB_NAME}
+
+ echo "Clean up"
+ rm /tmp/"${DESTINATION_DB_NAME}.sql.gz"
+EOF
+
+        printf "\n%s\n" "${grn}Local clean up${end}"
+        rm /tmp/"${DESTINATION_DB_NAME}.sql.gz"
+
+    else
+        echo "Error when then trying to remotely login:"
+        echo $status
+        exit
+    fi
 
 fi

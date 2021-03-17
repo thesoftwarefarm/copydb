@@ -1,3 +1,7 @@
 .idea/*
 *.cfg
-!sample.cfg
+!sample_all_targets.cfg
+!sample_backup.cfg
+!sample_docker.cfg
+!sample_local.cfg
+!sample_remote.cfg
