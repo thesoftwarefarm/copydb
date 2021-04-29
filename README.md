@@ -1,6 +1,6 @@
 # Copying databases
 
-This script will copy a MySql database from the a remote server. 
+This script will copy a MySql/Postgresql database from the a remote server. 
 
 Connection information is taken from the configuration file provided as a parameter.
 
@@ -28,8 +28,17 @@ You should have the following:
 Clone this repository and make the script executable (`chmod +x copydb.sh`).
 
 ## Usage
+
+For MySql:
+
 ```
 ./copydb.sh sample.cfg
+```
+
+For Postgresql:
+
+```
+./pg-copydb.sh sample.cfg
 ```
 
 ## Multi-tenant systems
