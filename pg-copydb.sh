@@ -2,7 +2,7 @@
 
 #
 # Usage:
-#   ./copydb.sh sample.cfg
+#   ./pg-copydb.sh sample.cfg
 #
 
 # check if a config file has been provided
@@ -70,17 +70,17 @@ if [ $DESTINATION_TARGET == "local" ]; then
     if [ "$DROP_DATABASE_AND_RECREATE" = true ]
     then
         printf "\n%s\n" "${grn}Dropping the existing database${end}"
-        mysql -u ${DESTINATION_DB_USER} -p${DESTINATION_DB_PASS} -e "DROP DATABASE IF EXISTS ${DESTINATION_DB_NAME}"
+        sudo -u postgres dropdb -U postgres ${DESTINATION_DB_NAME}
     fi
 
     printf "\n%s\n" "${grn}Creating new database${end}"
-    mysql -u ${DESTINATION_DB_USER} -p${DESTINATION_DB_PASS} -e "CREATE DATABASE ${DESTINATION_DB_NAME}"
+    sudo -u postgres createdb -U postgres ${DESTINATION_DB_NAME}
 
     printf "\n%s\n" "${grn}Downloading the database${end}"
     dbd ${DBD_CONNECTION_ID} --dbname ${DBD_DATABASE_ID} --api-key ${DBD_API_KEY} --url ${DBD_URL} ${EXCLUDE_TABLES_PART} > /tmp/"${DESTINATION_DB_NAME}.sql.gz" 
     
     printf "\n%s\n" "${grn}Importing the database${end}"
-    pv /tmp/"${DESTINATION_DB_NAME}.sql.gz" | gunzip | mysql -u ${DESTINATION_DB_USER} -p${DESTINATION_DB_PASS} ${DESTINATION_DB_NAME}
+    pv /tmp/"${DESTINATION_DB_NAME}.sql.gz" | gunzip | sudo -u postgres psql -U postgres -d ${DESTINATION_DB_NAME}
 
     printf "\n%s\n" "${grn}Cleaning up${end}"
     rm /tmp/"${DESTINATION_DB_NAME}.sql.gz"
@@ -94,12 +94,12 @@ elif [ $DESTINATION_TARGET == "docker" ]; then
     if [ "$DOCKER_NEW_INSTANCE" = true ]
     then
         INSTANCE_NAME="copydb_"${TIMESTAMP}
-        docker run -td --name ${INSTANCE_NAME} --health-cmd='mysqladmin ping --silent' -p 3306 -e MYSQL_ROOT_PASSWORD=${DESTINATION_DB_PASS} -d ${DOCKER_TAG} --max-allowed-packet=67108864 --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+        docker run -td --name ${INSTANCE_NAME} -p 5432 -e POSTGRES_PASSWORD=${DESTINATION_DB_PASS} -d ${DOCKER_TAG}
     else
         INSTANCE_NAME="$DOCKER_EXISTING_INSTANCE_NAME"
     fi
 
-    while ! docker exec ${INSTANCE_NAME} mysqladmin --user=root --password=${DESTINATION_DB_PASS} --host "127.0.0.1" ping --silent &> /dev/null ; do
+    while ! docker exec ${INSTANCE_NAME} pg_isready; do
         echo "Waiting for a database connection..."
         sleep 1
     done
@@ -109,18 +109,18 @@ elif [ $DESTINATION_TARGET == "docker" ]; then
     if [ "$DROP_DATABASE_AND_RECREATE" = true ]
     then
         printf "\n%s\n" "${grn}Dropping the existing database${end}"
-        docker exec -it ${INSTANCE_NAME} mysql -uroot -p${DESTINATION_DB_PASS} -e "DROP DATABASE IF EXISTS ${DESTINATION_DB_NAME};"
+        docker exec -it ${INSTANCE_NAME} dropdb -U postgres ${DESTINATION_DB_NAME}
     fi
 
     printf "\n%s\n" "${grn}Creating a new database${end}"
-    docker exec -it ${INSTANCE_NAME} mysql -uroot -p${DESTINATION_DB_PASS} -e "CREATE DATABASE ${DESTINATION_DB_NAME};"
+    docker exec -it ${INSTANCE_NAME} createdb -U postgres ${DESTINATION_DB_NAME}
 
     printf "\n%s\n" "${grn}Downloading the database within /tmp/ ${end}"
     dbd ${DBD_CONNECTION_ID} --dbname ${DBD_DATABASE_ID} --api-key ${DBD_API_KEY} --url ${DBD_URL} ${EXCLUDE_TABLES_PART} > /tmp/"${DESTINATION_DB_NAME}.sql.gz"
 
     printf "\n%s\n" "${grn}Importing the database${end}"
 
-    pv /tmp/"${DESTINATION_DB_NAME}.sql.gz" | gunzip | docker exec -i ${INSTANCE_NAME} mysql -uroot -p${DESTINATION_DB_PASS} ${DESTINATION_DB_NAME}
+    pv /tmp/"${DESTINATION_DB_NAME}.sql.gz" | gunzip | docker exec -i ${INSTANCE_NAME} psql -U postgres -d ${DESTINATION_DB_NAME}
 
     printf "\n%s\n" "${grn}Cleaning up${end}"
     rm /tmp/"${DESTINATION_DB_NAME}.sql.gz"
@@ -130,7 +130,7 @@ elif [ $DESTINATION_TARGET == "docker" ]; then
     printf "\n${grn}Ports you can use: ${end}\n"
     docker port ${INSTANCE_NAME}
 
-    printf "\n${grn}Database credentials: root / \"${end}$DESTINATION_DB_PASS${grn}\".${end}\n"
+    printf "\n${grn}Database credentials: postgres / \"${end}$DESTINATION_DB_PASS${grn}\".${end}\n"
 
     printf "\n${grn}The copied database name is \"${end}$DESTINATION_DB_NAME${grn}\".${end}\n\n"
 
@@ -155,20 +155,26 @@ elif [ $DESTINATION_TARGET == "remote" ]; then
         DROP_DATABASE_SEQUENCE=""
         if [ "$DROP_DATABASE_AND_RECREATE" = true ]
         then
-            DROP_DATABASE_SEQUENCE="mysql -u ${DESTINATION_DB_USER} -p${DESTINATION_DB_PASS} -e \"DROP DATABASE IF EXISTS ${DESTINATION_DB_NAME}\""
+            DROP_DATABASE_SEQUENCE="dropdb -U postgres ${DESTINATION_DB_NAME}"
         fi
 
         printf "\n%s\n" "${grn}Running commands on remote host${end}"
         ssh ${REMOTE_USER}@${REMOTE_IP} << EOF
  
+ echo "Login as postgres"
+ sudo su postgres
+
  echo "Dropping database if required" 
  ${DROP_DATABASE_SEQUENCE}
  
  echo "Creating database"       
- mysql -u ${DESTINATION_DB_USER} -p${DESTINATION_DB_PASS} -e "CREATE DATABASE ${DESTINATION_DB_NAME}"
+ createdb -U postgres ${DESTINATION_DB_NAME}
 
  echo "Importing database"
- pv /tmp/"${DESTINATION_DB_NAME}.sql.gz" | gunzip | mysql -u ${DESTINATION_DB_USER} -p${DESTINATION_DB_PASS} ${DESTINATION_DB_NAME}
+ pv /tmp/"${DESTINATION_DB_NAME}.sql.gz" | gunzip | psql -U postgres -d ${DESTINATION_DB_NAME}
+
+ echo "Logout from postgres"
+ exit
 
  echo "Clean up"
  rm /tmp/"${DESTINATION_DB_NAME}.sql.gz"
