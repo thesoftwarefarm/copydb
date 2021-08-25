@@ -145,7 +145,7 @@ elif [ $DESTINATION_TARGET == "remote" ]; then
     # when checking if we can connect to remote host, use:
     # - StrictHostKeyChecking to automatically accept host keys
     # - LogLevel=ERROR to suppress the warning when the host key is missing and is automatically added.
-    status=$(ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o StrictHostKeyChecking=no -o LogLevel=ERROR ${REMOTE_USER}@${REMOTE_IP} echo ok 2>&1)
+    status=$(ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o LogLevel=ERROR ${REMOTE_USER}@${REMOTE_IP} echo ok 2>&1)
 
     if [[ $status == ok ]] ; then
         
