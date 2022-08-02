@@ -24,7 +24,7 @@ then
     exit
 fi
 
-VALID_TARGETS=('local' 'docker' 'backup' 'remote')
+VALID_TARGETS=('local' 'docker' 'backup' 'remote' 'cloud')
 
 if ! grep -q $DESTINATION_TARGET <<< "${VALID_TARGETS[@]}"
 then
@@ -40,6 +40,12 @@ then
         echo "pv could not be found, please install it first (on MacOS: brew install pv)"
         exit
     fi
+fi
+
+if ([ $DESTINATION_TARGET == "cloud" ] && [ -z $CLOUD_HOSTNAME ] )
+then
+    echo "Cloud hostname is missing."
+    exit
 fi
 
 # define a couple of variables
@@ -65,7 +71,29 @@ else
       EXCLUDE_TABLES_PART="--exclude-table-data ${EXCLUDED_TABLES}"
 fi
 
-if [ $DESTINATION_TARGET == "local" ]; then
+if [ $DESTINATION_TARGET == "cloud" ]; then
+
+    if [ "$DROP_DATABASE_AND_RECREATE" = true ]
+    then
+        printf "\n%s\n" "${grn}Dropping the existing database${end}"
+        mysql -h ${CLOUD_HOSTNAME} -u ${DESTINATION_DB_USER} -p${DESTINATION_DB_PASS} -e "DROP DATABASE IF EXISTS ${DESTINATION_DB_NAME}"
+    fi
+
+    printf "\n%s\n" "${grn}Creating new database${end}"
+    mysql -h ${CLOUD_HOSTNAME} -u ${DESTINATION_DB_USER} -p${DESTINATION_DB_PASS} -e "CREATE DATABASE ${DESTINATION_DB_NAME}"
+
+    printf "\n%s\n" "${grn}Downloading the database${end}"
+    dbd ${DBD_CONNECTION_ID} --dbname ${DBD_DATABASE_ID} --api-key ${DBD_API_KEY} --url ${DBD_URL} ${EXCLUDE_TABLES_PART} > /tmp/"${DESTINATION_DB_NAME}.sql.gz" 
+    
+    printf "\n%s\n" "${grn}Importing the database${end}"
+    pv /tmp/"${DESTINATION_DB_NAME}.sql.gz" | gunzip | mysql -h ${CLOUD_HOSTNAME} -u ${DESTINATION_DB_USER} -p${DESTINATION_DB_PASS} ${DESTINATION_DB_NAME}
+
+    printf "\n%s\n" "${grn}Cleaning up${end}"
+    rm /tmp/"${DESTINATION_DB_NAME}.sql.gz"
+
+    printf "\n${grn}The copied database name is \"${end}$DESTINATION_DB_NAME${grn}\".${end}\n\n"
+
+elif [ $DESTINATION_TARGET == "local" ]; then
 
     if [ "$DROP_DATABASE_AND_RECREATE" = true ]
     then
