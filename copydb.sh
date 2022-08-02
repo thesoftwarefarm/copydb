@@ -29,6 +29,7 @@ VALID_TARGETS=('local' 'docker' 'backup' 'remote' 'cloud')
 if ! grep -q $DESTINATION_TARGET <<< "${VALID_TARGETS[@]}"
 then
     echo 'You have selected an invalid destination target'
+    exit
 fi
 
 # we need pv to be found within PATH, otherwise we'll do a lot of steps only to error out
